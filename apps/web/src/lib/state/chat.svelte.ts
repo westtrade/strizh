@@ -5,7 +5,7 @@
  * и так видны все мутации в одном файле. Сеть (XMPP) живёт в `@strizh/xmpp-core`,
  * здесь только реактивная проекция его событий.
  */
-import { XmppClient, bareJid, defaultService } from '@strizh/xmpp-core';
+import { XmppClient, bareJid } from '@strizh/xmpp-core';
 import type { Account, ChatMessage, ChatState, ConnectionStatus, Contact, Presence } from '@strizh/xmpp-core';
 
 import { defaultResource, detectPlatform, type Platform } from '../platform.ts';
@@ -91,7 +91,10 @@ export class ChatSession {
 		const normalized: Account = {
 			...account,
 			jid: bareJid(account.jid),
-			service: account.service?.trim() || defaultService(account.jid),
+			// Пустая строка, а не угаданный адрес: пустое поле значит «найди сам»
+			// (XEP-0156 + перебор кандидатов). Подставленный здесь defaultService
+			// заставлял ядро считать адрес заданным вручную и не искать другие.
+			service: account.service?.trim() || undefined,
 			resource: account.resource?.trim() || defaultResource(this.platform)
 		};
 		try {
@@ -200,6 +203,9 @@ export class ChatSession {
 
 	#applyPresence(jid: string, presence: Presence, status: string): void {
 		const peer = bareJid(jid);
+		// Своё присутствие сервер тоже присылает. Без этой проверки владелец
+		// учётки появлялся в собственном списке контактов.
+		if (this.self && peer === bareJid(this.self)) return;
 		const known = this.contacts.find((c) => c.jid === peer);
 		if (known) {
 			known.presence = presence;

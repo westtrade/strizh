@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { bareJid, defaultService, isJid } from '@strizh/xmpp-core';
+	import { bareJid, isJid, jidDomain } from '@strizh/xmpp-core';
 	import type { StoredAccount } from '#lib/storage.ts';
 	import { loadAccounts, removeAccount, saveAccount } from '#lib/storage.ts';
 	import { platformLabel } from '#lib/platform.ts';
@@ -23,10 +23,24 @@
 	let errorText = $derived(
 		session.error ?? (jid && !isJid(jid) ? 'Адрес должен выглядеть как user@example.org' : null)
 	);
-	/** Подсказка показывает реальный эндпоинт, который уйдёт в соединение. */
+	/**
+	 * Пустой эндпоинт означает не «взять этот», а «найти самому»: клиент
+	 * спросит сервер через XEP-0156 и переберёт типовые адреса.
+	 */
 	let effectiveService = $derived(
-		service.trim() || (isJid(jid) ? defaultService(jid) : 'wss://example.org:5280/xmpp-websocket')
+		service.trim() ||
+			(isJid(jid) ? `поиск эндпоинта ${jidDomain(jid)}` : 'wss://example.org:5280/xmpp-websocket')
 	);
+	/** Сколько кандидатов перебирается: показываем прогресс, а не немой спиннер. */
+	let attempt = $state(0);
+	$effect(() => {
+		if (session.status === 'connecting') {
+			attempt = 0;
+			const timer = setInterval(() => (attempt += 1), 1000);
+			return () => clearInterval(timer);
+		}
+		return;
+	});
 
 	function pickAccount(account: StoredAccount): void {
 		selected = account.jid;
@@ -164,14 +178,23 @@
 						/>
 					</label>
 					<p class="hint">
-						Пусто — берётся <code>{effectiveService}</code>. Сервер должен поддерживать
-						WebSocket (ejabberd: порт 5280, Prosody: <code>/xmpp-websocket</code>).
+						Пусто — <code>{effectiveService}</code>. Клиент сам спросит сервер через
+						<code>.well-known/host-meta</code> (XEP-0156) и переберёт типовые адреса:
+						<code>:5280/xmpp-websocket</code>, <code>/ws/</code> на 443-м. Указывайте
+						адрес вручную, только если сервер слушает что-то нестандартное.
 					</p>
 				</div>
 			{/if}
 
 			{#if errorText}
 				<p class="error" role="alert">{errorText}</p>
+			{/if}
+
+			{#if busy && attempt >= 4}
+				<p class="hint" role="status">
+					Сервер не отвечает {attempt} с. Клиент перебирает адреса; если ваш сервер слушает
+					нестандартный порт, укажите эндпоинт в поле выше.
+				</p>
 			{/if}
 
 			<button class="submit" type="submit" disabled={!canSubmit}>

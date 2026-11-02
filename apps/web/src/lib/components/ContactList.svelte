@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { bareJid } from '@strizh/xmpp-core';
 	import type { Contact } from '@strizh/xmpp-core';
 	import Avatar from './Avatar.svelte';
 	import { formatDayLabel, formatTime, splitJid } from '#lib/format.ts';
@@ -27,8 +28,15 @@
 			}))
 	);
 
+	/** Себя в списке собеседников нет: писать самому себе — отдельный сценарий. */
+	let visible = $derived(
+		[...session.contacts, ...extraPeers].filter(
+			(contact) => !session.self || contact.jid !== bareJid(session.self)
+		)
+	);
+
 	let sorted = $derived(
-		[...session.contacts, ...extraPeers].sort((a, b) => {
+		[...visible].sort((a, b) => {
 			const unreadA = session.unread[a.jid] ?? 0;
 			const unreadB = session.unread[b.jid] ?? 0;
 			if (unreadA !== unreadB) return unreadB - unreadA;
