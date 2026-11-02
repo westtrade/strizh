@@ -3,8 +3,33 @@
 # и открывает окно с WebView. Rust-компилятор обязателен.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-command -v cargo >/dev/null 2>&1 || {
-  echo "нужен Rust: https://rustup.rs" >&2
+
+# `command -v cargo` недостаточно: в asdf-среде шим есть всегда, а без
+# назначенной версии rust он падает с кодом 126. Проверяем настоящий запуск.
+if ! cargo --version >/dev/null 2>&1; then
+  cat >&2 <<'EOF'
+нужен рабочий Rust-тулчейн: https://rustup.rs
+в asdf-среде версия не назначена — выполните из корня репозитория:
+  asdf local rust 1.99.1     (либо добавьте строку в .tool-versions)
+EOF
   exit 1
-}
+fi
+
+# Системные библиотеки проверяем до компиляции. Иначе cargo честно соберёт
+# 240 крейтов и упадёт на libdbus-sys — сообщение придёт через пять минут
+# вместо двух секунд.
+missing=()
+for lib in webkit2gtk-4.1 javascriptcoregtk-4.1 libsoup-3.0 dbus-1 gtk+-3.0; do
+  pkg-config --exists "$lib" 2>/dev/null || missing+=("$lib")
+done
+if [ ${#missing[@]} -gt 0 ]; then
+  printf 'нет системных библиотек Tauri: %s\n' "${missing[*]}" >&2
+  cat >&2 <<'EOF'
+на Ubuntu они ставятся как dev-пакеты:
+  sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+                   libdbus-1-dev librsvg2-dev build-essential
+EOF
+  exit 1
+fi
+
 exec ./node_modules/.bin/tauri dev "$@"

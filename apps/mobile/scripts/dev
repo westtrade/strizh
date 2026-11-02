@@ -3,4 +3,41 @@
 # Требует, чтобы dev-сервер apps/web был уже запущен (make -C apps/web dev).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-exec ./node_modules/.bin/capacitor run android --livereload "$@"
+
+# Те же подстановки, что в scripts/build: Android SDK и JDK в этой среде
+# лежат не там, где их ищут gradle и native-run по умолчанию.
+sdk_home=""
+for candidate in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$HOME/Android/Sdk" "$HOME/android-build/sdk"; do
+  if [ -n "$candidate" ] && [ -d "$candidate/platform-tools" ]; then
+    sdk_home=$candidate
+    break
+  fi
+done
+if [ -z "$sdk_home" ]; then
+  cat >&2 <<'EOF'
+не найден Android SDK (нужен каталог с platform-tools/)
+задайте ANDROID_HOME, например:
+  ANDROID_HOME=$HOME/android-build/sdk make -C apps/mobile dev
+EOF
+  exit 1
+fi
+export ANDROID_HOME="$sdk_home"
+export ANDROID_SDK_ROOT="$sdk_home"
+export PATH="$sdk_home/platform-tools:$PATH"
+
+if [ -z "${JAVA_HOME:-}" ] && [ -d "$HOME/android-build/jdk/jdk-21.0.12.1+1" ]; then
+  export JAVA_HOME="$HOME/android-build/jdk/jdk-21.0.12.1+1"
+fi
+
+# Без устройства `capacitor run` падает невнятной ошибкой native-run.
+if [ -z "$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')" ]; then
+  cat >&2 <<'EOF'
+нет подключённого Android-устройства
+проверьте кабель и `adb devices`, либо соберите APK без устройства:
+  make -C apps/mobile build
+EOF
+  exit 1
+fi
+
+# --live-reload (с дефисом) — так флаг называется в Capacitor 8.
+exec ./node_modules/.bin/capacitor run android --live-reload "$@"

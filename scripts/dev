@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Поднимает локальную среду разработки в выбранных юнитах.
-#   make dev                       все приложения (web, desktop, mobile)
-#   make dev ARGS="web"            только SvelteKit-фронтенд (vite dev)
-#   make dev ARGS="@strizh/web"    то же по имени пакета
+#   make dev                       только apps/web — единственный dev-сервер
+#   make dev ARGS="desktop"        окно Tauri (Vite поднимет beforeDevCommand)
+#   make dev ARGS="mobile"         приложение на Android-устройстве
 #   make dev ARGS="--all"          все юниты, включая packages/
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -19,5 +19,12 @@ unit_dev_fallback() {
     printf '==> %s: долгоживущего dev-сервера нет\n' "$dir" >&2
   fi
 }
+
+# Без селектора поднимаем только web. Причина не в лени: desktop и mobile —
+# оболочки над тем же Vite-сервером, порт 5173 у них общий, и запуск «всех
+# приложений» означал бы три драки за один порт. Оболочки стартуют по имени.
+if [ $# -eq 0 ]; then
+  set -- web
+fi
 
 units_run dev "$@"
