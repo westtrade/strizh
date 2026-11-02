@@ -1,0 +1,41 @@
+# @strizh/desktop
+
+Tauri 2 оболочка: системный WebView открывает статический бандл
+`apps/web/build`. Никакой нативной логики, кроме настройки окна, нет.
+
+- Каталог: `apps/desktop/`
+- Запуск: `make dev ARGS="desktop"` из корня или `make -C apps/desktop dev`
+- Сборка: `make build ARGS="desktop"` → `src-tauri/target/release/strizh`
+- Установщики: `make bundle ARGS="desktop"` (`.deb`, `.AppImage` на Linux)
+
+## Как связаны фронтенд и оболочка
+
+`src-tauri/tauri.conf.json`:
+
+| Ключ | Значение | Зачем |
+| --- | --- | --- |
+| `build.beforeDevCommand` | `cd ../web && ./scripts/dev` | `tauri dev` сам поднимает Vite |
+| `build.beforeBuildCommand` | `cd ../web && ./scripts/build` | бандл всегда свежий перед сборкой |
+| `build.devUrl` | `http://localhost:5173` | порт зафиксирован `strictPort` в Vite |
+| `build.frontendDist` | `../../web/build` | отсчитывается от `src-tauri/` |
+
+CSP разрешает `wss:` и `ws:` в `connect-src`: без этого WebView заблокирует
+XMPP-соединение. `ws:` нужен только для локального мок-сервера.
+
+## Иконки
+
+Сгенерированы из `apps/web/static/favicon.svg` в PNG, ICO и ICNS. Пересобрать
+после смены знака: `npx @tauri-apps/cli icon ../web/static/favicon.svg`.
+
+## Требования
+
+`cargo`, `rustc` и системные пакеты: `libwebkit2gtk-4.1-dev`, `libdbus-1-dev`,
+`librsvg2-dev`, `libgtk-3-dev`. В среде разработки этого проекта их нет,
+поэтому `cargo build` здесь не прогонялся; `make -C apps/desktop check`
+проверяет то, что можно проверить без компилятора.
+
+## Что дальше
+
+- Stronghold для пароля вместо localStorage;
+- трей-иконка и автозапуск;
+- проверка обновлений (`tauri-plugin-updater`).

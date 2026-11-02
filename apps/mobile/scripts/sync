@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Копирует свежую сборку apps/web в нативные проекты Capacitor.
+# Без этого шага в APK уезжает прошлый бандл.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+../web/scripts/build
+exec ./node_modules/.bin/capacitor sync "$@"

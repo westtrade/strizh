@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Поднимает локальную среду разработки в выбранных юнитах.
+#   make dev                       все приложения (web, desktop, mobile)
+#   make dev ARGS="web"            только SvelteKit-фронтенд (vite dev)
+#   make dev ARGS="@strizh/web"    то же по имени пакета
+#   make dev ARGS="--all"          все юниты, включая packages/
+set -euo pipefail
+cd "$(dirname "$0")/.."
+# shellcheck source=_units.sh
+. ./scripts/_units.sh
+
+# Как запускать dev в юните, у которого нет своей цели dev.
+# Правится под проект: это единственное место, знающее команду запуска.
+unit_dev_fallback() {
+  local dir=$1
+  if [ -f "$dir/vite.config.ts" ]; then
+    ( cd "$dir" && exec bunx vite dev )
+  else
+    printf '==> %s: долгоживущего dev-сервера нет\n' "$dir" >&2
+  fi
+}
+
+units_run dev "$@"

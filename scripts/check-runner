@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# Проверяет контракт запуска: Makefile в корне, исполняемые скрипты только в scripts/,
+# shebang + бит +x, у каждого скрипта есть цель, у каждой цели — существующий скрипт.
+# Тот же контракт проверяется во вложенных раннерах юнитов (apps/<юнит>, packages/<юнит>):
+# у юнита вправе быть свой Makefile + scripts/, но по тем же правилам.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if [ ! -f Makefile ]; then
+  echo "FAIL  нет Makefile в корне проекта" >&2
+  exit 1
+fi
+if [ ! -d scripts ]; then
+  echo "FAIL  нет каталога scripts/" >&2
+  exit 1
+fi
+
+status=0
+fail() { printf 'FAIL  %s\n' "$*" >&2; status=1; }
+warn() { printf 'WARN  %s\n' "$*" >&2; }
+
+# check_runner_in <каталог с Makefile> <префикс для сообщений>
+check_runner_in() {
+  local dir=$1 prefix=$2 makefile make_label nested count=0 path base target call
+
+  makefile="$dir/Makefile"
+  make_label="${prefix:+$prefix/}Makefile"
+
+  # help обязателен в корне; у юнита с одной-двумя целями это лишний бойлерплейт.
+  if [ -z "$prefix" ]; then
+    grep -qE '^help:' "$makefile" || fail "$make_label: нет цели help"
+  else
+    grep -qE '^help:' "$makefile" || warn "$make_label: нет цели help (для юнита необязательно)"
+  fi
+
+  while IFS= read -r nested; do
+    fail "${prefix:+$prefix/}scripts/ должен быть плоским, найден $nested"
+    break
+  done < <(find "$dir/scripts" -mindepth 2 -type f | sort)
+
+  while IFS= read -r path; do
+    count=$((count + 1))
+    base=${path#"$dir/scripts/"}
+    target=${base%%.*}
+    [ -x "$path" ] || fail "$path: нет бита исполнения (chmod +x)"
+    [ "$(head -c 2 "$path")" = '#!' ] || fail "$path: первая строка не shebang"
+    grep -qE "^${target}:" "$makefile" || fail "$path: нет цели '${target}:' в $make_label"
+  done < <(find "$dir/scripts" -maxdepth 1 -type f ! -name '_*' | sort)
+
+  # строки-комментарии не считаются вызовами: в шаблоне Makefile они содержат примеры
+  while IFS= read -r call; do
+    [ -f "$dir/${call#./}" ] || fail "$make_label зовёт несуществующий $call"
+  done < <(grep -vE '^[[:space:]]*#' "$makefile" | grep -oE '\./scripts/[A-Za-z0-9._-]+' | sort -u)
+
+  count_all=$((count_all + count))
+  checked_units=$((checked_units + 1))
+}
+
+count_all=0
+checked_units=0
+
+check_runner_in . ""
+
+# Вложенные раннеры юнитов: свой Makefile + scripts/ по тем же правилам.
+# Юнит, у которого scripts/ есть, но Makefile нет, — долг (WARN), а не поломка
+# контракта: такой scripts/ часто появляется раньше миграции на make.
+for kind in apps packages; do
+  [ -d "$kind" ] || continue
+  for unit in "$kind"/*/; do
+    unit=${unit%/}
+    [ -d "$unit/scripts" ] || continue
+    if [ ! -f "$unit/Makefile" ]; then
+      # README и прочая документация в scripts/ — не повод для замечания.
+      if [ -n "$(find "$unit/scripts" -maxdepth 1 -type f ! -name '_*' \
+            ! -iname 'readme*' ! -iname 'license*' | head -1)" ]; then
+        warn "$unit: есть scripts/, но нет Makefile — команды юнита запускаются через make"
+      fi
+      continue
+    fi
+    check_runner_in "$unit" "$unit"
+  done
+done
+
+printf 'Проверено скриптов: %s (раннеров: %s)\n' "$count_all" "$checked_units"
+
+if [ "$status" -ne 0 ]; then
+  echo "Контракт запуска нарушен." >&2
+  exit 1
+fi
+echo "Контракт запуска соблюдён."

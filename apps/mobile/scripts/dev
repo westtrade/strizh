@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Живой режим на устройстве: Capacitor открывает Vite-сервер по LAN.
+# Требует, чтобы dev-сервер apps/web был уже запущен (make -C apps/web dev).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+exec ./node_modules/.bin/capacitor run android --livereload "$@"

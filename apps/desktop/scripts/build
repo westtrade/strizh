@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Сборка бинарника без установщиков: быстрее и не требует системных
+# упаковщиков (dpkg-deb, rpmbuild, appimagetool).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+command -v cargo >/dev/null 2>&1 || {
+  echo "нужен Rust: https://rustup.rs" >&2
+  exit 1
+}
+exec ./node_modules/.bin/tauri build --no-bundle "$@"

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Проверяет типы и стиль в выбранных юнитах.
+#   make check                 все приложения
+#   make check ARGS="--all"    все юниты, включая packages/
+set -euo pipefail
+cd "$(dirname "$0")/.."
+# shellcheck source=_units.sh
+. ./scripts/_units.sh
+
+# Юнит без своей цели check проверяется этой командой. Правится под проект.
+unit_check_fallback() {
+  local dir=$1
+  if [ -f "$dir/vite.config.ts" ]; then
+    ( cd "$dir" && bunx svelte-kit sync && exec bunx svelte-check --tsconfig ./tsconfig.json )
+  elif [ -f "$dir/tsconfig.json" ]; then
+    ( cd "$dir" && exec bunx tsc --noEmit -p . )
+  else
+    printf '==> %s: нечего проверять\n' "$dir" >&2
+  fi
+}
+
+units_run check "$@"

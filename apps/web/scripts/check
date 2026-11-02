@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Проверка типов и разметки компонентов.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+bunx svelte-kit sync
+exec bunx svelte-check --tsconfig ./tsconfig.json --output human "$@"

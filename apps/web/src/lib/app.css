@@ -1,0 +1,152 @@
+/*
+ * Единственный глобальный стиль приложения. Всё остальное — в <style> компонентов.
+ *
+ * Направление: «радиостанция» — графит, тёплый янтарный акцент, тонкие линейки,
+ * плотный список, никаких градиентов и скруглений больше 4px. Шрифт интерфейса
+ * системный, служебные подписи — моноширинные.
+ */
+
+:root {
+	--ink-900: #080a0e;
+	--ink-850: #0b0e13;
+	--ink-800: #0f131a;
+	--ink-700: #161b24;
+	--ink-600: #1e242f;
+	--ink-500: #2a323f;
+	--line: #232a35;
+	--line-soft: #1a2029;
+
+	--text: #e6e9ef;
+	--text-dim: #9aa4b2;
+	/* Не ниже 5:1 на всех фонах приложения, включая светлый пузырь исходящего. */
+	--text-faint: #8a94a3;
+
+	--amber: #f5b544;
+	--amber-dim: #c98f2c;
+	--amber-ink: #191104;
+
+	--online: #59c98a;
+	--away: #e0a63f;
+	--dnd: #e2645c;
+	--offline: #5b6472;
+
+	--radius: 4px;
+	--font: 'Inter', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', sans-serif;
+	--mono: 'JetBrains Mono', 'SF Mono', ui-monospace, 'Cascadia Mono', Menlo, monospace;
+
+	color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	height: 100%;
+}
+
+body {
+	background: var(--ink-850);
+	color: var(--text);
+	font-family: var(--font);
+	font-size: 15px;
+	line-height: 1.45;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+	/* Мобильные WebView: не даём странице «резиниться» и мигать при скролле. */
+	overscroll-behavior: none;
+}
+
+.app-root {
+	height: 100%;
+	/* Safe-area для iPhone с вырезом: контент не заезжает под статус-бар. */
+	padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+		env(safe-area-inset-left);
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+figure {
+	margin: 0;
+}
+
+button,
+input,
+textarea,
+select {
+	font: inherit;
+	color: inherit;
+}
+
+button {
+	cursor: pointer;
+	background: none;
+	border: none;
+	padding: 0;
+}
+
+a {
+	color: var(--amber);
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+:focus-visible {
+	outline: 2px solid var(--amber);
+	outline-offset: 2px;
+}
+
+::selection {
+	background: var(--amber);
+	color: var(--amber-ink);
+}
+
+/* Тонкий скроллбар: на десктопе в Tauri полоса по умолчанию выглядит чужой. */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--ink-500) transparent;
+}
+
+*::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+	background: var(--ink-500);
+	border-radius: 4px;
+}
+
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+/* Служебная типографика: метки, счётчики, служебные подписи. */
+.mono {
+	font-family: var(--mono);
+	font-size: 11px;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
+}

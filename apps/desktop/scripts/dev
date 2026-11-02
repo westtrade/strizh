@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# tauri dev: поднимает Vite из apps/web (beforeDevCommand в tauri.conf.json)
+# и открывает окно с WebView. Rust-компилятор обязателен.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+command -v cargo >/dev/null 2>&1 || {
+  echo "нужен Rust: https://rustup.rs" >&2
+  exit 1
+}
+exec ./node_modules/.bin/tauri dev "$@"

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Vite dev-сервер SvelteKit-приложения.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+bunx svelte-kit sync
+exec bunx vite dev "$@"

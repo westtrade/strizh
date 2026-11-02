@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Удаляет артефакты сборки выбранных юнитов (не трогает node_modules).
+#   make clean                 все приложения
+#   make clean ARGS="--all"    все юниты
+set -euo pipefail
+cd "$(dirname "$0")/.."
+# shellcheck source=_units.sh
+. ./scripts/_units.sh
+
+unit_clean_fallback() {
+  local dir=$1
+  rm -rf "$dir/build" "$dir/.svelte-kit" "$dir/dist" "$dir/coverage"
+  printf '==> %s: артефакты удалены\n' "$dir" >&2
+}
+
+units_run clean "$@"

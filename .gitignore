@@ -1,0 +1,30 @@
+# Зависимости
+node_modules/
+
+# Сборка
+build/
+.svelte-kit/
+.output/
+dist/
+coverage/
+
+# Нативные артефакты
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/schemas/
+apps/mobile/android/.gradle/
+apps/mobile/android/build/
+apps/mobile/android/app/build/
+apps/mobile/android/local.properties
+apps/mobile/android/app/src/main/assets/public/
+apps/mobile/android/capacitor-cordova-android-plugins/
+
+# Окружение
+.env
+.env.*
+!.env.example
+
+# ОС и редакторы
+.DS_Store
+Thumbs.db
+.idea/
+*.log

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Прогоняет тесты выбранных юнитов.
+#   make test                 все приложения
+#   make test ARGS="--all"    все юниты, включая packages/
+#   make test ARGS="xmpp"     один юнит
+set -euo pipefail
+cd "$(dirname "$0")/.."
+# shellcheck source=_units.sh
+. ./scripts/_units.sh
+
+# Юнит без своей цели test проверяется этой командой. Правится под проект.
+unit_test_fallback() {
+  local dir=$1
+  if [ -d "$dir/test" ]; then
+    ( cd "$dir" && exec node --test test/ )
+  else
+    printf '==> %s: тестов нет\n' "$dir" >&2
+  fi
+}
+
+units_run test "$@"

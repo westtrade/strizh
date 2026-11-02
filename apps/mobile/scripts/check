@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Проверка связки: конфиг Capacitor, наличие платформы и синхронность бандла.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+python3 - <<'PY'
+import json, pathlib, sys
+
+root = pathlib.Path('.')
+errors = []
+warnings = []
+
+config = json.loads((root / 'android/app/src/main/assets/capacitor.config.json').read_text(encoding='utf-8'))
+if config.get('appId') != 'app.strizh.mobile':
+    errors.append(f"appId в собранном конфиге: {config.get('appId')!r}")
+
+web_dir = (root / config['webDir']).resolve()
+bundle_index = root / 'android/app/src/main/assets/public/index.html'
+if not bundle_index.is_file():
+    errors.append('нет synced-бандла в android/app/src/main/assets/public/index.html')
+
+built_index = web_dir / 'index.html'
+if built_index.is_file() and bundle_index.is_file():
+    if bundle_index.stat().st_mtime < built_index.stat().st_mtime:
+        warnings.append('бандл в APK старше сборки web — нужен make sync')
+elif not built_index.is_file():
+    errors.append(f'нет сборки web: {built_index}')
+
+for gradle in ('android/build.gradle', 'android/app/build.gradle', 'android/gradlew'):
+    if not (root / gradle).is_file():
+        errors.append(f'нет {gradle} — платформа Android не добавлена')
+
+for warning in warnings:
+    print(f'WARN  {warning}')
+if errors:
+    for error in errors:
+        print(f'FAIL  {error}', file=sys.stderr)
+    sys.exit(1)
+
+print(f'OK    appId: {config["appId"]}')
+print(f'OK    webDir: {config["webDir"]}')
+print('OK    платформа Android на месте')
+PY

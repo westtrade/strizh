@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Собирает debug-APK. Сборка web и sync выполняются здесь же: иначе APK
+# соберётся из старого бандла.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+../web/scripts/build
+./node_modules/.bin/capacitor sync android
+
+if [ -z "${ANDROID_HOME:-}${ANDROID_SDK_ROOT:-}" ] && [ -d "$HOME/android-build/sdk" ]; then
+  export ANDROID_HOME="$HOME/android-build/sdk"
+  export ANDROID_SDK_ROOT="$ANDROID_HOME"
+fi
+if [ -d "$HOME/android-build/jdk/jdk-21.0.12.1+1" ] && [ -z "${JAVA_HOME:-}" ]; then
+  export JAVA_HOME="$HOME/android-build/jdk/jdk-21.0.12.1+1"
+fi
+
+(cd android && exec ./gradlew assembleDebug "$@")
+echo
+echo "APK: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk"

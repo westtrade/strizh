@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Собирает выбранные юниты.
+#   make build                 все приложения
+#   make build ARGS="web"      статический бандл SvelteKit (apps/web/build)
+#   make build ARGS="desktop"  нативная сборка Tauri
+#   make build ARGS="mobile"   APK/Capacitor
+#   make build ARGS="--all"    все юниты, включая packages/
+set -euo pipefail
+cd "$(dirname "$0")/.."
+# shellcheck source=_units.sh
+. ./scripts/_units.sh
+
+# Юнит без своей цели build собирается этой командой. Правится под проект.
+unit_build_fallback() {
+  local dir=$1
+  if [ -f "$dir/vite.config.ts" ]; then
+    ( cd "$dir" && exec bunx vite build )
+  else
+    printf '==> %s: шага сборки нет (библиотека исходников)\n' "$dir" >&2
+  fi
+}
+
+units_run build "$@"

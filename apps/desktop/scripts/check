@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Проверки без Rust-компилятора: JSON-конфиг Tauri, наличие иконок и целей
+# сборки фронтенда. cargo check сюда не входит: без системного
+# webkit2gtk-4.1-dev он падает не на нашем коде.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+python3 - <<'PY'
+import json, pathlib, sys
+
+root = pathlib.Path('.')
+conf = json.loads((root / 'src-tauri/tauri.conf.json').read_text(encoding='utf-8'))
+errors = []
+
+for icon in conf['bundle']['icon']:
+    if not (root / 'src-tauri' / icon).is_file():
+        errors.append(f'нет иконки: src-tauri/{icon}')
+
+identifier = conf.get('identifier', '')
+if identifier.count('.') < 1:
+    errors.append(f'identifier должен быть обратным доменом: {identifier!r}')
+
+if not (root / 'src-tauri/Cargo.toml').is_file():
+    errors.append('нет src-tauri/Cargo.toml')
+
+# frontendDist в tauri.conf.json отсчитывается от каталога src-tauri/
+frontend = (root / 'src-tauri' / conf['build']['frontendDist']).resolve()
+if not frontend.is_dir():
+    errors.append(
+        f'нет собранного фронтенда {conf["build"]["frontendDist"]} (от src-tauri/) — '
+        'сначала make -C apps/web build'
+    )
+
+if errors:
+    for error in errors:
+        print(f'FAIL  {error}', file=sys.stderr)
+    sys.exit(1)
+
+print(f'OK    tauri.conf.json валиден, иконок: {len(conf["bundle"]["icon"])}')
+print(f'OK    фронтенд на месте: {frontend}')
+PY
