@@ -21,7 +21,7 @@ src/
 │   ├── format.ts          время, JID, инициалы
 │   ├── components/        Avatar, LoginScreen, ContactList, ChatView,
 │   │                      SettingsSheet, EmptyState, AddContactDialog,
-│   │                      SubscriptionRequests
+│   │                      SubscriptionRequests, UserMenu
 │   └── state/
 │       ├── chat.svelte.ts сессия: реактивная проекция событий XMPP
 │       └── context.ts     типизированный контекст вместо синглтона
@@ -39,6 +39,19 @@ src/
 
 Контекст (`setSession`/`getSession`) вместо импорта синглтона: сессия
 пересоздаётся вместе с корневым layout, а не живёт вечно в модуле.
+
+## Меню учётной записи
+
+Клик по своей аватарке в шапке открывает `UserMenu`:
+
+- строка с полным JID без ресурса (`westtrade@jabber.ru`, а не
+  `…/strizh-web`) и кнопка копирования;
+- кнопка «Выйти» — отключение и возврат на экран входа.
+
+Длинный адрес переносится по точкам, а не растягивает меню: на 390px ширины
+меню остаётся в пределах экрана. Копирование идёт через
+`navigator.clipboard`, а там, где он недоступен (WebView на `file://`) —
+через скрытую textarea. Закрывается по клику вне меню и по Escape.
 
 ## Добавление контакта
 

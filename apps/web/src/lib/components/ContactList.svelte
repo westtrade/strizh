@@ -3,18 +3,20 @@
 	import type { Contact } from '@strizh/xmpp-core';
 	import Avatar from './Avatar.svelte';
 	import SubscriptionRequests from './SubscriptionRequests.svelte';
+	import UserMenu from './UserMenu.svelte';
 	import { formatDayLabel, formatTime, splitJid } from '#lib/format.ts';
 	import { getSession } from '#lib/state/context.ts';
 
 	interface Props {
 		onopenSettings: () => void;
 		onaddContact: () => void;
+		onlogout: () => void;
 	}
 
-	let { onopenSettings, onaddContact }: Props = $props();
+	let { onopenSettings, onaddContact, onlogout }: Props = $props();
 	let session = getSession();
 
-	let self = $derived(session.self ?? '');
+	let self = $derived(session.self ? bareJid(session.self) : '');
 	let selfParts = $derived(splitJid(self));
 
 	/** Собеседник без ростера: писал первым, в списке контактов его ещё нет. */
@@ -68,7 +70,7 @@
 
 <aside class="sidebar">
 	<header class="me">
-		<Avatar name={selfParts.local} jid={self} size={38} presence={session.online ? session.presence : 'offline'} />
+		<UserMenu {onlogout} />
 		<div class="me-text">
 			<strong>{selfParts.local || 'нет сессии'}</strong>
 			<span class="mono">{session.online ? 'в сети' : 'выключен'}</span>

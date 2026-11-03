@@ -21,6 +21,7 @@
 	<ContactList
 		onopenSettings={() => (settingsOpen = true)}
 		onaddContact={() => (addContactOpen = true)}
+		onlogout={logout}
 	/>
 
 	<main class="main">
