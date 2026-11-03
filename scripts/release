@@ -127,7 +127,19 @@ fi
 
 step "Отправка"
 # --follow-tags шлёт и коммит, и аннотированный тег одним действием.
-git push --follow-tags origin "HEAD:$(git branch --show-current)"
+#
+# GIT_SSH_COMMAND с `-F /dev/null` берётся только для SSH-remote и только если
+# системный конфиг не читается (частый случай в контейнерах: симлинк в
+# /etc/ssh/ssh_config.d принадлежит не-root, и ssh падает с "Bad owner or
+# permissions"). На HTTPS-remote переменная безвредна, но и не нужна.
+push_args=(--follow-tags origin "HEAD:$(git branch --show-current)")
+if [[ "$(git remote get-url origin)" == git@* ]] && ! ssh -G github.com >/dev/null 2>&1; then
+  echo "системный ssh_config не читается — использую чистый конфиг"
+  GIT_SSH_COMMAND="ssh -F /dev/null -o StrictHostKeyChecking=accept-new" \
+    git push "${push_args[@]}"
+else
+  git push "${push_args[@]}"
+fi
 
 remote=$(git remote get-url origin | sed -E 's#.*[:/]([^/]+/[^/]+?)(\.git)?$#\1#')
 
