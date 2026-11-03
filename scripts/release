@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# Готовит и отправляет релиз: проверки, тег, push. Сборку артефактов делает
+# GitHub Actions (.github/workflows/release.yml) на трёх ОС.
+#
+#   make release ARGS="0.2.0"              версия без v, тег создастся как v0.2.0
+#   make release ARGS="v0.2.0"             то же, v допустим
+#   make release ARGS="0.2.0-rc.1"         предрелиз: помечается prerelease
+#   make release ARGS="0.2.0 --dry-run"    проверки и тег локально, без push
+#   make release ARGS="0.2.0 --force"      разрешить релиз с занятого коммита
+#
+# Скрипт намеренно ничего не собирает сам: локальная сборка одной ОС не даёт
+# трёх платформ, а CI собирает их параллельно и прикладывает к релизу.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+version=""
+dry_run=0
+force=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) dry_run=1 ;;
+    --force) force=1 ;;
+    -*) echo "неизвестный флаг: $arg" >&2; exit 2 ;;
+    *) [ -z "$version" ] && version=$arg || { echo "лишний аргумент: $arg" >&2; exit 2; } ;;
+  esac
+done
+
+if [ -z "$version" ]; then
+  cat >&2 <<'EOF'
+укажите версию:
+  make release ARGS="0.2.0"
+  make release ARGS="0.2.0 --dry-run"
+EOF
+  exit 2
+fi
+
+# Семвер с необязательным суффиксом: 0.2.0, 1.0.0-rc.1, 2.1.3-beta.
+version=${version#v}
+if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+  echo "версия должна быть semver: 0.2.0 или 0.2.0-rc.1 (получено: $version)" >&2
+  exit 2
+fi
+tag="v$version"
+
+step() { printf '\n==> %s\n' "$*"; }
+
+step "Проверки"
+if [ -n "$(git status --porcelain)" ]; then
+  echo "рабочее дерево грязное — закоммитьте или спрячьте изменения:" >&2
+  git status --short >&2
+  exit 1
+fi
+
+if ! git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+  echo "у ветки нет upstream: git push -u origin $(git branch --show-current)" >&2
+  exit 1
+fi
+
+make check-runner
+make monorepo-check
+make test ARGS="--all"
+make check ARGS="web"
+
+step "Тег $tag"
+if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+  if [ "$force" -eq 0 ]; then
+    echo "тег $tag уже существует (--force, чтобы пересоздать)" >&2
+    exit 1
+  fi
+  git tag -f -a "$tag" -m "Стриж $version"
+else
+  git tag -a "$tag" -m "Стриж $version"
+fi
+echo "создан $tag на $(git rev-parse --short HEAD)"
+
+# Версия попадает в tauri.conf.json прямо в CI из тега, поэтому локальный
+# коммит с правкой версии не нужен: тег — единственный источник правды.
+
+if [ "$dry_run" -eq 1 ]; then
+  step "Dry-run: отправка пропущена"
+  cat <<EOF
+локально создан тег $tag.
+чтобы отправить и запустить сборку:
+  git push origin $tag
+или удалить тег, если передумали:
+  git tag -d $tag
+EOF
+  exit 0
+fi
+
+step "Отправка тега"
+git push origin "$tag"
+
+cat <<EOF
+
+==> Готово: $tag отправлен.
+
+GitHub Actions соберёт и опубликует:
+  - Linux:   .deb, .rpm
+  - Windows: .msi, .exe (NSIS)
+  - macOS:   .dmg для aarch64 и x64
+
+Прогресс:   gh run watch
+Релиз:      gh release view $tag --web
+Артефакты:  https://github.com/$(git remote get-url origin | sed -E 's#.*[:/]([^/]+/[^/]+?)(\.git)?$#\1#')/releases/tag/$tag
+EOF
