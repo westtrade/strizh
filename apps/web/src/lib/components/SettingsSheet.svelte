@@ -3,6 +3,7 @@
 	import { defaultResource, platformLabel } from '#lib/platform.ts';
 	import { getSession } from '#lib/state/context.ts';
 	import { splitJid } from '#lib/format.ts';
+	import { appVersion } from '#lib/version.ts';
 
 	interface Props {
 		onclose: () => void;
@@ -89,6 +90,7 @@
 			Jabber-серверу. Поддерживаются подтверждения доставки (XEP-0184) и индикатор набора
 			(XEP-0085).
 		</p>
+		<p class="mono version">версия {appVersion}</p>
 	</div>
 
 	<button class="logout" type="button" onclick={onlogout}>Выйти из учётной записи</button>
@@ -230,6 +232,11 @@
 
 	input:focus {
 		border-color: var(--amber-dim);
+	}
+
+	.version {
+		margin-top: 6px;
+		color: var(--text-faint);
 	}
 
 	.about p {

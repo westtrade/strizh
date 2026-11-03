@@ -81,7 +81,8 @@ $ bun packages/xmpp-core/test/mock-server.ts      # ws://127.0.0.1:5280/xmpp-web
 | `make build ARGS="web"` | статический бандл в `apps/web/build` |
 | `make build ARGS="desktop"` | бинарник Tauri (без установщиков) |
 | `make bundle ARGS="desktop"` | установщики локально: `.deb`, `.rpm` |
-| `make release ARGS="0.2.0"` | релиз: проверки, тег, сборка на трёх ОС в CI |
+| `make version` | текущая версия (`ARGS="check"` — сверить файлы) |
+| `make release` | релиз: поднять версию, коммит, тег, сборка на трёх ОС |
 | `make build ARGS="mobile"` | debug-APK |
 | `make check` | svelte-check + конфиги оболочек |
 | `make test` | тесты всех юнитов |
@@ -90,16 +91,41 @@ $ bun packages/xmpp-core/test/mock-server.ts      # ws://127.0.0.1:5280/xmpp-web
 
 Цели юнитов работают и напрямую: `make -C apps/web build`.
 
+## Версионирование
+
+Один источник правды — `version` в корневом `package.json`. Остальные файлы её
+повторяют поневоле: Cargo и Tauri читают свои манифесты, Android — gradle,
+npm-пакеты — свои `package.json`. `scripts/version` разносит значение по всем
+девяти местам и умеет сверять их:
+
+```console
+$ make version                    # 0.1.0
+$ make version ARGS="check"       # сверить все файлы, код 1 при расхождении
+$ ./scripts/version bump minor    # 0.1.0 → 0.2.0 (patch|minor|major|prerelease)
+```
+
+`versionCode` для Android считается как `major*10000 + minor*100 + patch`
+(0.1.0 → 100, 1.2.3 → 10203), поэтому обновление устанавливается поверх
+предыдущей версии.
+
 ## Релиз
 
 ```console
-$ make release ARGS="0.2.0 --dry-run"   # проверки и тег локально, без отправки
-$ make release ARGS="0.2.0"             # тег v0.2.0 → push → CI собирает и публикует
+$ make release                  # patch:  0.1.0 → 0.1.1
+$ make release ARGS="minor"     # minor:  0.1.1 → 0.2.0
+$ make release ARGS="prerelease"  # 0.2.0 → 0.2.1-rc.1, затем rc.2, rc.3…
+$ make release ARGS="1.2.3"     # явная версия
+$ make release ARGS="minor --dry-run"  # локально, без отправки
 ```
 
+Одна команда делает всё: прогоняет проверки (тесты, `check-runner`,
+`monorepo-check`, `svelte-check`), поднимает версию, коммитит
+`chore(release): vX.Y.Z`, ставит аннотированный тег и отправляет
+`git push --follow-tags`.
+
 Сборка артефактов идёт в GitHub Actions (`.github/workflows/release.yml`), а
-не локально: одна машина не даёт три платформы. По тегу `v*` workflow сначала
-прогоняет проверки, затем параллельно собирает:
+не локально: одна машина не даёт три платформы. По тегу `v*` workflow сверяет
+тег с версией в файлах, прогоняет проверки и параллельно собирает:
 
 | ОС | Артефакты |
 | --- | --- |
@@ -107,8 +133,11 @@ $ make release ARGS="0.2.0"             # тег v0.2.0 → push → CI соби
 | Windows | `.msi`, `.exe` (NSIS) |
 | macOS (aarch64 и x64) | `.dmg` |
 
-Версия попадает в `tauri.conf.json` из имени тега прямо в CI — правку конфига
-коммитить не нужно. Тег с дефисом (`0.2.0-rc.1`) публикуется как prerelease.
+Тег с дефисом (`0.2.0-rc.1`) публикуется как prerelease. Версия попадает в
+бинарники из файлов проекта, а не из имени тега: `make release` обновляет их
+до коммита, и workflow лишь проверяет совпадение. Поэтому релиз, выпущенный
+вручную тегом без поднятия версии, останавливается с ошибкой, а не публикует
+бинарники с чужой версией.
 
 Сборка macOS не подписана: Gatekeeper покажет предупреждение при первом
 запуске. Для подписи нужны сертификаты Apple Developer и секреты

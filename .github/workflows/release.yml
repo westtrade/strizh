@@ -59,6 +59,9 @@ jobs:
       - name: Проверка типов и разметки
         run: make check ARGS="web"
 
+      - name: Версии во всех файлах согласованы
+        run: make version ARGS="check"
+
   build:
     name: ${{ matrix.label }}
     needs: verify
@@ -124,22 +127,22 @@ jobs:
       - name: Сборка фронтенда
         run: make build ARGS="web"
 
-      # Node, а не python3: на windows-latest python3 может отсутствовать,
-      # а Node в этом проекте есть всегда.
-      - name: Версия в конфиге из тега
+      # Тег и версия в файлах должны совпадать: тег ставит `make release`,
+      # который сам поднимает версию через ./scripts/version. Если расходятся —
+      # тег поставлен вручную, и бинарники выйдут с чужой версией.
+      - name: Тег совпадает с версией проекта
         if: github.ref_type == 'tag'
         shell: bash
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          node -e '
-            const fs = require("node:fs");
-            const path = "apps/desktop/src-tauri/tauri.conf.json";
-            const data = JSON.parse(fs.readFileSync(path, "utf8"));
-            data.version = process.argv[1];
-            fs.writeFileSync(path, JSON.stringify(data, null, "\t") + "\n");
-          ' "$version"
-          echo "версия: $version"
+          tag_version="${GITHUB_REF_NAME#v}"
+          file_version=$(make -s version)
+          echo "тег: $tag_version, в файлах: $file_version"
+          if [ "$tag_version" != "$file_version" ]; then
+            echo "::error::тег $GITHUB_REF_NAME не совпадает с версией $file_version"
+            echo "выпускайте релиз через: make release"
+            exit 1
+          fi
 
       - name: Сборка десктопа
         shell: bash
