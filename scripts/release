@@ -141,7 +141,9 @@ else
   git push "${push_args[@]}"
 fi
 
-remote=$(git remote get-url origin | sed -E 's#.*[:/]([^/]+/[^/]+?)(\.git)?$#\1#')
+# Сначала убираем хвост .git, потом берём owner/repo из любого вида remote
+# (git@host:owner/repo и https://host/owner/repo).
+remote=$(git remote get-url origin | sed -E 's#\.git$##' | sed -E 's#^.*[:/]([^/]+/[^/]+)$#\1#')
 
 cat <<EOF
 
