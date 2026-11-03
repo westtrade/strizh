@@ -17,12 +17,21 @@ version=""
 dry_run=0
 force=0
 
+# `make release ARGS="0.2.0 --dry-run"` приходит ОДНИМ аргументом: Makefile
+# передаёт ARGS без разбиения (кавычки сохраняются). Разбираем и то, и другое:
+# слова из одного аргумента тоже считаем за отдельные.
+args=()
 for arg in "$@"; do
+  # shellcheck disable=SC2206  # разбиение по пробелам здесь намеренное
+  args+=($arg)
+done
+
+for arg in "${args[@]}"; do
   case "$arg" in
     --dry-run) dry_run=1 ;;
     --force) force=1 ;;
     -*) echo "неизвестный флаг: $arg" >&2; exit 2 ;;
-    *) [ -z "$version" ] && version=$arg || { echo "лишний аргумент: $arg" >&2; exit 2; } ;;
+    *) if [ -z "$version" ]; then version=$arg; else echo "лишний аргумент: $arg" >&2; exit 2; fi ;;
   esac
 done
 
