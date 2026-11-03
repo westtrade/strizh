@@ -43,6 +43,9 @@ apps/desktop/src-tauri/target/release/strizh        ~3.4 МБ, stripped
 Результат `bundle` — в `target/release/bundle/`: `.deb` и `.rpm` на Linux
 (проверены, по 1.5 МБ), `.dmg` на macOS, `.msi`/`.exe` на Windows.
 
+Для релиза локальная сборка не нужна: `make release ARGS="0.2.0"` отправляет
+тег, а артефакты для трёх ОС собирает GitHub Actions (см. корневой README).
+
 AppImage на этой машине не собирается: Tauri качает `AppRun` с GitHub и
 получает оборванный ответ (`unexpected end of file`). Это сеть, а не проект:
 `.deb` и `.rpm` из того же прогона собрались нормально. Повторить позже или
