@@ -80,7 +80,8 @@ $ bun packages/xmpp-core/test/mock-server.ts      # ws://127.0.0.1:5280/xmpp-web
 | `make dev ARGS="mobile"` | запуск на подключённом Android-устройстве |
 | `make build ARGS="web"` | статический бандл в `apps/web/build` |
 | `make build ARGS="desktop"` | бинарник Tauri (без установщиков) |
-| `make bundle ARGS="desktop"` | установщики: `.deb`, `.AppImage`, `.dmg`, `.msi` |
+| `make bundle ARGS="desktop"` | установщики локально: `.deb`, `.rpm` |
+| `make release ARGS="0.2.0"` | релиз: проверки, тег, сборка на трёх ОС в CI |
 | `make build ARGS="mobile"` | debug-APK |
 | `make check` | svelte-check + конфиги оболочек |
 | `make test` | тесты всех юнитов |
@@ -88,6 +89,30 @@ $ bun packages/xmpp-core/test/mock-server.ts      # ws://127.0.0.1:5280/xmpp-web
 | `make monorepo-check` | раскладка `apps/` + `packages/` |
 
 Цели юнитов работают и напрямую: `make -C apps/web build`.
+
+## Релиз
+
+```console
+$ make release ARGS="0.2.0 --dry-run"   # проверки и тег локально, без отправки
+$ make release ARGS="0.2.0"             # тег v0.2.0 → push → CI собирает и публикует
+```
+
+Сборка артефактов идёт в GitHub Actions (`.github/workflows/release.yml`), а
+не локально: одна машина не даёт три платформы. По тегу `v*` workflow сначала
+прогоняет проверки, затем параллельно собирает:
+
+| ОС | Артефакты |
+| --- | --- |
+| Linux (ubuntu-22.04) | `.deb`, `.rpm` |
+| Windows | `.msi`, `.exe` (NSIS) |
+| macOS (aarch64 и x64) | `.dmg` |
+
+Версия попадает в `tauri.conf.json` из имени тега прямо в CI — правку конфига
+коммитить не нужно. Тег с дефисом (`0.2.0-rc.1`) публикуется как prerelease.
+
+Сборка macOS не подписана: Gatekeeper покажет предупреждение при первом
+запуске. Для подписи нужны сертификаты Apple Developer и секреты
+`APPLE_CERTIFICATE`, `APPLE_SIGNING_IDENTITY` в настройках репозитория.
 
 ## Требования
 
