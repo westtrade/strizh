@@ -3,7 +3,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 ARGS ?=
 
-.PHONY: help check-runner monorepo-check monorepo-new monorepo-selftest install dev build bundle check test clean release
+.PHONY: version help check-runner monorepo-check monorepo-new monorepo-selftest install dev build bundle check test clean release
 
 help: ## Список целей
 	@echo "Использование: make <цель> [ARGS=\"...\"]"
@@ -55,5 +55,8 @@ test: ## Прогнать тесты
 clean: ## Удалить артефакты сборки
 	./scripts/clean $(ARGS)
 
-release: ## Выпустить релиз: ARGS="0.2.0" (сборка — в GitHub Actions)
+version: ## Показать версию проекта (ARGS="check" — сверить файлы)
+	./scripts/version $(ARGS)
+
+release: ## Выпустить релиз: ARGS="minor|patch|1.2.3 [--dry-run]"
 	./scripts/release $(ARGS)

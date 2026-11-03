@@ -1,0 +1,278 @@
+#!/usr/bin/env bash
+# Версия проекта в одном месте и во всех, где она продублирована.
+#
+#   ./scripts/version                  напечатать текущую
+#   ./scripts/version check            сверить, что все файлы согласованы
+#   ./scripts/version bump patch       поднять и записать (patch|minor|major|prerelease)
+#   ./scripts/version set 1.2.3        записать заданную
+#
+# Источник правды — version в корневом package.json. Остальные файлы его
+# повторяют поневоле: Cargo и Tauri читают свой манифест, Android — gradle,
+# npm-пакеты — свои package.json. Расхождение между ними ловит `check`;
+# он же вызывается в CI перед сборкой.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+ROOT_PKG=package.json
+APP_PKGS=(apps/web/package.json apps/desktop/package.json apps/mobile/package.json packages/xmpp-core/package.json)
+TAURI_CONF=apps/desktop/src-tauri/tauri.conf.json
+CARGO_TOML=apps/desktop/src-tauri/Cargo.toml
+CARGO_LOCK=apps/desktop/src-tauri/Cargo.lock
+GRADLE=apps/mobile/android/app/build.gradle
+
+# --- чтение -----------------------------------------------------------------
+
+# Первое top-level `"version": "x.y.z"` в JSON. Вложенные версии зависимостей
+# имеют другой ключ, поэтому шаблон по имени поля не задевает.
+read_json_version() {
+	sed -nE 's/^[[:space:]]*"version":[[:space:]]*"([^"]+)".*/\1/p' "$1" | head -1
+}
+
+read_cargo_version() {
+	sed -nE 's/^version = "([^"]+)"/\1/p' "$CARGO_TOML" | head -1
+}
+
+# В Cargo.lock десятки пакетов со своим version: нужен блок именно strizh.
+read_lock_version() {
+	awk '
+		/^name = "strizh"$/ { ours = 1; next }
+		ours && /^version = / { gsub(/^version = "|"$/, ""); print; exit }
+		ours && /^\[\[package\]\]$/ { ours = 0 }
+	' "$CARGO_LOCK"
+}
+
+read_gradle_version() {
+	sed -nE 's/^[[:space:]]*versionName[[:space:]]+"([^"]+)".*/\1/p' "$GRADLE" | head -1
+}
+
+read_gradle_code() {
+	sed -nE 's/^[[:space:]]*versionCode[[:space:]]+([0-9]+).*/\1/p' "$GRADLE" | head -1
+}
+
+read_version() {
+	local v
+	v=$(read_json_version "$ROOT_PKG")
+	[ -n "$v" ] || {
+		echo "в $ROOT_PKG нет поля version" >&2
+		exit 1
+	}
+	printf '%s' "$v"
+}
+
+# --- запись -----------------------------------------------------------------
+
+# versionCode Android растёт монотонно и не зависит от prerelease-суффикса:
+# major*10000 + minor*100 + patch (0.1.0 → 100, 1.2.3 → 10203).
+version_code() {
+	local core major minor patch
+	core=${1%%-*}
+	IFS=. read -r major minor patch <<<"$core"
+	printf '%s' $((10#$major * 10000 + 10#$minor * 100 + 10#$patch))
+}
+
+write_json_version() {
+	local file=$1 new=$2
+	grep -qE '^[[:space:]]*"version":[[:space:]]*"' "$file" || {
+		echo "$file: не нашёл поле version" >&2
+		return 1
+	}
+	sed -i -E "s/^([[:space:]]*)\"version\":[[:space:]]*\"[^\"]*\"/\1\"version\": \"$new\"/" "$file"
+}
+
+write_cargo_version() {
+	local new=$1 tmp
+	tmp=$(mktemp)
+	awk -v v="$new" '
+		!done && /^version = "/ { sub(/^version = "[^"]*"/, "version = \"" v "\""); done = 1 }
+		{ print }
+	' "$CARGO_TOML" >"$tmp"
+	mv "$tmp" "$CARGO_TOML"
+}
+
+write_lock_version() {
+	local new=$1 tmp
+	tmp=$(mktemp)
+	awk -v v="$new" '
+		/^name = "strizh"$/ { ours = 1; print; next }
+		ours && /^version = / {
+			sub(/^version = "[^"]*"/, "version = \"" v "\"")
+			ours = 0
+			print
+			next
+		}
+		{ print }
+	' "$CARGO_LOCK" >"$tmp"
+	mv "$tmp" "$CARGO_LOCK"
+}
+
+write_gradle_version() {
+	local new=$1 code=$2
+	sed -i -E "s/^([[:space:]]*)versionName[[:space:]]+\"[^\"]*\"/\1versionName \"$new\"/" "$GRADLE"
+	sed -i -E "s/^([[:space:]]*)versionCode[[:space:]]+[0-9]+/\1versionCode $code/" "$GRADLE"
+}
+
+write_version() {
+	local new=$1 file
+	write_json_version "$ROOT_PKG" "$new"
+	for file in "${APP_PKGS[@]}"; do
+		[ -f "$file" ] && write_json_version "$file" "$new"
+	done
+	[ -f "$TAURI_CONF" ] && write_json_version "$TAURI_CONF" "$new"
+	[ -f "$CARGO_TOML" ] && write_cargo_version "$new"
+	# Cargo.lock может не быть в свежем клоне до первой сборки — не ошибка.
+	[ -f "$CARGO_LOCK" ] && write_lock_version "$new"
+	[ -f "$GRADLE" ] && write_gradle_version "$new" "$(version_code "$new")"
+}
+
+# --- semver -----------------------------------------------------------------
+
+is_semver() {
+	[[ $1 =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+}
+
+bump_version() {
+	local kind=$1 cur=$2 core=${2%%-*} pre="" major minor patch base num
+	[[ $cur == *-* ]] && pre=${cur#*-}
+	IFS=. read -r major minor patch <<<"$core"
+	major=$((10#$major))
+	minor=$((10#$minor))
+	patch=$((10#$patch))
+
+	case "$kind" in
+	major)
+		major=$((major + 1))
+		minor=0
+		patch=0
+		pre=""
+		;;
+	minor)
+		minor=$((minor + 1))
+		patch=0
+		pre=""
+		;;
+	patch)
+		patch=$((patch + 1))
+		pre=""
+		;;
+	prerelease)
+		if [ -n "$pre" ]; then
+			if [[ $pre == *.* ]]; then
+				base=${pre%.*}
+				num=${pre##*.}
+			else
+				base=$pre
+				num=0
+			fi
+			[[ $num =~ ^[0-9]+$ ]] || {
+				base=$pre
+				num=0
+			}
+			pre="$base.$((10#$num + 1))"
+		else
+			patch=$((patch + 1))
+			pre="rc.1"
+		fi
+		;;
+	*)
+		echo "неизвестный тип повышения: $kind (patch|minor|major|prerelease)" >&2
+		return 1
+		;;
+	esac
+
+	printf '%s.%s.%s%s' "$major" "$minor" "$patch" "${pre:+-$pre}"
+}
+
+# --- команды ----------------------------------------------------------------
+
+cmd_check() {
+	local current file value actual failed=0
+	current=$(read_version)
+	printf 'версия: %s (%s)\n' "$current" "$ROOT_PKG"
+
+	# Сверяем каждый файл-дубликат. Молча пропускаем отсутствующие: в свежем
+	# клоне Cargo.lock и android/ могут не существовать.
+	check_one() {
+		local label=$1 value=$2
+		if [ "$value" != "$current" ]; then
+			printf 'FAIL  %-34s %s\n' "$label" "$value" >&2
+			failed=1
+		fi
+	}
+
+	for file in "${APP_PKGS[@]}"; do
+		[ -f "$file" ] && check_one "$file" "$(read_json_version "$file")"
+	done
+	[ -f "$TAURI_CONF" ] && check_one "$TAURI_CONF" "$(read_json_version "$TAURI_CONF")"
+	[ -f "$CARGO_TOML" ] && check_one "$CARGO_TOML" "$(read_cargo_version)"
+	[ -f "$CARGO_LOCK" ] && check_one "$CARGO_LOCK (strizh)" "$(read_lock_version)"
+	[ -f "$GRADLE" ] && check_one "$GRADLE" "$(read_gradle_version)"
+
+	# versionCode тоже должен соответствовать версии, иначе Android обновление
+	# не установится поверх предыдущего.
+	if [ -f "$GRADLE" ]; then
+		local want_code
+		want_code=$(version_code "$current")
+		actual=$(read_gradle_code)
+		if [ "$actual" != "$want_code" ]; then
+			printf 'FAIL  %-34s %s (ожидался %s)\n' "$GRADLE versionCode" "$actual" "$want_code" >&2
+			failed=1
+		fi
+	fi
+
+	if [ "$failed" -ne 0 ]; then
+		echo "версии расходятся — приведите к одной: ./scripts/version set $current" >&2
+		return 1
+	fi
+	printf 'OK    все файлы согласованы\n'
+}
+
+cmd_set() {
+	local new=${1:-}
+	is_semver "$new" || {
+		echo "нужна semver-версия: 1.2.3 или 1.2.3-rc.1 (получено: '${new}')" >&2
+		return 2
+	}
+	write_version "$new"
+	printf '%s' "$new"
+}
+
+cmd_bump() {
+	local kind=${1:-patch} current next
+	current=$(read_version)
+	next=$(bump_version "$kind" "$current") || return 1
+	write_version "$next"
+	printf '%s' "$next"
+}
+
+usage() {
+	cat >&2 <<'EOF'
+использование:
+  ./scripts/version                  текущая версия
+  ./scripts/version check            сверить файлы
+  ./scripts/version bump patch       поднять (patch|minor|major|prerelease)
+  ./scripts/version set 1.2.3        записать заданную
+EOF
+}
+
+command=${1:-show}
+case "$command" in
+show | current) printf '%s\n' "$(read_version)" ;;
+check) cmd_check ;;
+bump)
+	# Только версия в stdout: скрипт release подставляет её в переменную.
+	# Человекочитаемый отчёт — в stderr, чтобы не попасть в подстановку.
+	new=$(cmd_bump "${2:-patch}") || exit 1
+	printf 'версия: %s\n' "$new" >&2
+	printf '%s\n' "$new"
+	;;
+set)
+	new=$(cmd_set "${2:-}") || exit 1
+	printf 'версия: %s\n' "$new" >&2
+	printf '%s\n' "$new"
+	;;
+-h | --help | help) usage ;;
+*)
+	usage
+	exit 2
+	;;
+esac

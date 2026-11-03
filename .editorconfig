@@ -8,9 +8,14 @@ trim_trailing_whitespace = true
 indent_style = tab
 indent_size = 2
 
-[*.{json,yml,yaml,md,css}]
+[*.{yml,yaml,md,css}]
 indent_style = space
 indent_size = 2
+
+# JSON и TOML пишутся табами: так их создают инструменты (npm, tauri, cargo),
+# и стиль файлов совпадает при перезаписи.
+[*.json]
+indent_style = tab
 
 [Makefile]
 indent_style = tab
