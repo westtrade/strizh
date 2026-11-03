@@ -27,18 +27,64 @@ XMPP-соединение. `ws:` нужен только для локально
 Сгенерированы из `apps/web/static/favicon.svg` в PNG, ICO и ICNS. Пересобрать
 после смены знака: `npx @tauri-apps/cli icon ../web/static/favicon.svg`.
 
-## Требования
+## Сборка
 
-`cargo`, `rustc` и системные пакеты: `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`,
-`libsoup-3.0-dev`, `libdbus-1-dev`, `librsvg2-dev`.
+```console
+$ make build ARGS="desktop"     # бинарник, без установщиков
+$ make bundle ARGS="desktop"    # + установщики для текущей ОС
+```
 
-`scripts/dev` проверяет их через `pkg-config` **до** запуска cargo: иначе
-сборка 240 крейтов заканчивается паникой `libdbus-sys` через несколько минут.
-Проверка занимает доли секунды и называет недостающие библиотеки.
+Результат `build`:
 
-Rust через asdf: версия должна быть назначена. В корне репозитория лежит
-`.tool-versions` со строкой `rust 1.99.1`; без неё шим `cargo` есть, но
-падает с кодом 126 и Tauri не может выполнить `cargo metadata`.
+```text
+apps/desktop/src-tauri/target/release/strizh        ~3.4 МБ, stripped
+```
+
+Результат `bundle` — в `target/release/bundle/`: `.deb` и `.rpm` на Linux
+(проверены, по 1.5 МБ), `.dmg` на macOS, `.msi`/`.exe` на Windows.
+
+AppImage на этой машине не собирается: Tauri качает `AppRun` с GitHub и
+получает оборванный ответ (`unexpected end of file`). Это сеть, а не проект:
+`.deb` и `.rpm` из того же прогона собрались нормально. Повторить позже или
+собрать только deb: `make bundle ARGS="desktop --bundles deb"`.
+
+### Что происходит внутри
+
+1. `scripts/build` проверяет, что `cargo` реально запускается;
+2. `scripts/_pkgconfig.sh` готовит линковку (см. ниже);
+3. `tauri build` вызывает `beforeBuildCommand` — сборку `apps/web` в
+   `apps/web/build`, — затем компилирует Rust и упаковывает бандл внутрь
+   бинарника.
+
+Фронтенд вшивается в исполняемый файл: отдельный сервер не нужен, окно
+открывает `tauri://localhost`.
+
+### Когда dev-пакетов нет
+
+Сборке нужны не заголовки, а линкер: `.pc`-описания и симлинки `libfoo.so`.
+Если стоит только рантайм (`libwebkit2gtk-4.1-0`, `libgtk-3-0`), а dev-пакетов
+нет — `_pkgconfig.sh` собирает шимы в `~/.cache/strizh/pkgconfig` и линкует
+против установленных библиотек. Сборка проходит, но это компромисс: версии в
+шимах угаданы, и для релиза нужны настоящие dev-пакеты.
+
+```console
+$ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+                   libdbus-1-dev librsvg2-dev build-essential
+```
+
+Проверено в этой среде: сборка через шимы проходит, бинарник запускается и
+открывает окно 1100×720 с интерфейсом.
+
+### Требования
+
+- `cargo`, `rustc` (в asdf — с назначенной версией; в корне лежит
+  `.tool-versions` со строкой `rust 1.99.1`);
+- системные библиотеки: `libwebkit2gtk-4.1`, `libgtk-3`, `libsoup-3.0`,
+  `libdbus-1`, `librsvg2`.
+
+`scripts/dev` и `scripts/build` проверяют тулчейн и библиотеки **до** запуска
+cargo: иначе сборка 240 крейтов заканчивается паникой `libdbus-sys` через
+несколько минут.
 
 `make -C apps/desktop check` проверяет то, что не требует компилятора:
 конфиг, иконки, наличие собранного фронтенда.

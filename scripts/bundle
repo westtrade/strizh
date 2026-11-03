@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Собирает установщики выбранных юнитов (сейчас это только desktop).
+#   make bundle ARGS="desktop"   .deb/.AppImage на Linux, .dmg на macOS, .msi на Windows
+#
+# Цель отделена от build: установщики требуют системных упаковщиков
+# (dpkg-deb, rpmbuild, appimagetool), которых может не быть.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+# shellcheck source=_units.sh
+. ./scripts/_units.sh
+
+unit_bundle_fallback() {
+  local dir=$1
+  printf '==> %s: установщиков не бывает (нет нативной оболочки)\n' "$dir" >&2
+}
+
+units_run bundle "$@"

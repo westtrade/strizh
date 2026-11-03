@@ -3,8 +3,17 @@
 # упаковщиков (dpkg-deb, rpmbuild, appimagetool).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-command -v cargo >/dev/null 2>&1 || {
-  echo "нужен Rust: https://rustup.rs" >&2
+# shellcheck source=_pkgconfig.sh
+. ./scripts/_pkgconfig.sh
+
+if ! cargo --version >/dev/null 2>&1; then
+  cat >&2 <<'EOF'
+нужен рабочий Rust-тулчейн: https://rustup.rs
+в asdf-среде версия не назначена — выполните из корня репозитория:
+  asdf local rust 1.99.1     (либо добавьте строку в .tool-versions)
+EOF
   exit 1
-}
+fi
+
+desktop_ensure_pkgconfig
 exec ./node_modules/.bin/tauri build --no-bundle "$@"

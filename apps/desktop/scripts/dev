@@ -3,6 +3,8 @@
 # и открывает окно с WebView. Rust-компилятор обязателен.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# shellcheck source=_pkgconfig.sh
+. ./scripts/_pkgconfig.sh
 
 # `command -v cargo` недостаточно: в asdf-среде шим есть всегда, а без
 # назначенной версии rust он падает с кодом 126. Проверяем настоящий запуск.
@@ -15,21 +17,9 @@ EOF
   exit 1
 fi
 
-# Системные библиотеки проверяем до компиляции. Иначе cargo честно соберёт
-# 240 крейтов и упадёт на libdbus-sys — сообщение придёт через пять минут
-# вместо двух секунд.
-missing=()
-for lib in webkit2gtk-4.1 javascriptcoregtk-4.1 libsoup-3.0 dbus-1 gtk+-3.0; do
-  pkg-config --exists "$lib" 2>/dev/null || missing+=("$lib")
-done
-if [ ${#missing[@]} -gt 0 ]; then
-  printf 'нет системных библиотек Tauri: %s\n' "${missing[*]}" >&2
-  cat >&2 <<'EOF'
-на Ubuntu они ставятся как dev-пакеты:
-  sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
-                   libdbus-1-dev librsvg2-dev build-essential
-EOF
-  exit 1
-fi
+# Системные библиотеки проверяем до компиляции: cargo иначе собирает 240
+# крейтов и падает на libdbus-sys через пять минут. Шимы нужны и здесь:
+# dev-пакетов может не быть, а рантайм-библиотеки — быть.
+desktop_ensure_pkgconfig
 
 exec ./node_modules/.bin/tauri dev "$@"

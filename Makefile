@@ -3,7 +3,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 ARGS ?=
 
-.PHONY: help check-runner monorepo-check monorepo-new monorepo-selftest install dev build check test clean
+.PHONY: help check-runner monorepo-check monorepo-new monorepo-selftest install dev build bundle check test clean
 
 help: ## Список целей
 	@echo "Использование: make <цель> [ARGS=\"...\"]"
@@ -42,6 +42,9 @@ dev: ## Поднять локальную среду разработки
 
 build: ## Собрать артефакты
 	./scripts/build $(ARGS)
+
+bundle: ## Собрать установщики (юнит desktop)
+	./scripts/bundle $(ARGS)
 
 check: ## Проверить типы и стиль
 	./scripts/check $(ARGS)
