@@ -1,0 +1,206 @@
+name: Release
+
+# Запуск с локального ПК одной командой:
+#   make release ARGS="0.2.0"      (или make release ARGS="v0.2.0 --dry-run")
+#
+# Скрипт scripts/release проверяет чистоту дерева, тесты, ставит тег и
+# отправляет его. Дальше этот workflow собирает артефакты и публикует релиз.
+#
+# Почему не сборка на каждый push: десктопные бандлы нужны только для релиза,
+# а прогон занимает ~15 минут на три ОС. Обычные проверки — в ci.yml.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # Ручной запуск из веб-интерфейса: собрать артефакты, ничего не публикуя.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Собрать без публикации релиза'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+env:
+  BUN_VERSION: '1.4.2'
+  NODE_VERSION: '22'
+
+jobs:
+  # Проверки до сборки: сломанный тег не должен превращаться в релиз.
+  verify:
+    name: Проверки
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Установка зависимостей
+        run: make install
+
+      - name: Контракт раннера
+        run: make check-runner
+
+      - name: Раскладка мультипакета
+        run: make monorepo-check
+
+      - name: Тесты
+        run: make test ARGS="--all"
+
+      - name: Проверка типов и разметки
+        run: make check ARGS="web"
+
+  build:
+    name: ${{ matrix.label }}
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            label: Linux
+            bundles: deb,rpm
+          - os: windows-latest
+            label: Windows
+            bundles: nsis,msi
+          - os: macos-latest
+            label: macOS (aarch64)
+            bundles: dmg,app
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            label: macOS (x64)
+            bundles: dmg,app
+            target: x86_64-apple-darwin
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target || '' }}
+
+      - name: Кэш cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'apps/desktop/src-tauri -> target'
+
+      # Системные зависимости Tauri. Версия 22.04 даёт webkit2gtk-4.1 из
+      # стандартных репозиториев — не нужно подключать сторонний PPA.
+      - name: Системные зависимости (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+            libdbus-1-dev librsvg2-dev patchelf
+
+      - name: Установка зависимостей
+        run: make install
+
+      # Фронтенд собирается отдельным шагом, а не beforeBuildCommand внутри
+      # Tauri: тот написан как `cd ../web && ./scripts/build`, то есть требует
+      # bash, и на Windows падает. `--config` с пустым beforeBuildCommand
+      # отключает его, оставляя остальной конфиг.
+      - name: Сборка фронтенда
+        run: make build ARGS="web"
+
+      # Node, а не python3: на windows-latest python3 может отсутствовать,
+      # а Node в этом проекте есть всегда.
+      - name: Версия в конфиге из тега
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          node -e '
+            const fs = require("node:fs");
+            const path = "apps/desktop/src-tauri/tauri.conf.json";
+            const data = JSON.parse(fs.readFileSync(path, "utf8"));
+            data.version = process.argv[1];
+            fs.writeFileSync(path, JSON.stringify(data, null, "\t") + "\n");
+          ' "$version"
+          echo "версия: $version"
+
+      - name: Сборка десктопа
+        shell: bash
+        env:
+          # macOS-подпись в проекте не настроена: собираем неподписанный бандл.
+          # Если появятся сертификаты — убрать и добавить APPLE_* секреты.
+          TAURI_SIGNING_PRIVATE_KEY: ''
+        run: |
+          set -euo pipefail
+          cd apps/desktop
+          args=(build --ci --config src-tauri/tauri.ci.conf.json --bundles "${{ matrix.bundles }}")
+          if [ -n "${{ matrix.target }}" ]; then
+            args+=(--target "${{ matrix.target }}")
+          fi
+          "$PWD/node_modules/.bin/tauri" "${args[@]}"
+
+      - name: Собрать артефакты для релиза
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=apps/desktop/src-tauri/target
+          # При сборке под конкретную платформу артефакты лежат в target/<triple>/.
+          if [ -n "${{ matrix.target }}" ]; then
+            root="$root/${{ matrix.target }}"
+          fi
+          mkdir -p dist
+          find "$root/release/bundle" -type f \
+            \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
+               -o -name '*.msi' -o -name '*.exe' -o -name '*.dmg' \) \
+            -exec cp {} dist/ \;
+          ls -lh dist
+
+      - name: Загрузить артефакты
+        uses: actions/upload-artifact@v4
+        with:
+          name: strizh-${{ matrix.label }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Публикация релиза
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.dry_run == false)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Скачать все артефакты
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Показать, что публикуем
+        run: ls -lh dist
+
+      - name: Публикация
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: true
