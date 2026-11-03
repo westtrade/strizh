@@ -99,7 +99,7 @@ npm-пакеты — свои `package.json`. `scripts/version` разносит
 девяти местам и умеет сверять их:
 
 ```console
-$ make version                    # 0.1.0
+$ make version                    # 0.1.2
 $ make version ARGS="check"       # сверить все файлы, код 1 при расхождении
 $ ./scripts/version bump minor    # 0.1.0 → 0.2.0 (patch|minor|major|prerelease)
 ```
@@ -121,7 +121,8 @@ $ make release ARGS="minor --dry-run"  # локально, без отправк
 Одна команда делает всё: прогоняет проверки (тесты, `check-runner`,
 `monorepo-check`, `svelte-check`), поднимает версию, коммитит
 `chore(release): vX.Y.Z`, ставит аннотированный тег и отправляет
-`git push --follow-tags`.
+`git push --follow-tags`. Полный прогон — около 6 минут: проверки ~20 с,
+дальше Linux/Windows/macOS собираются параллельно.
 
 Сборка артефактов идёт в GitHub Actions (`.github/workflows/release.yml`), а
 не локально: одна машина не даёт три платформы. По тегу `v*` workflow сверяет
@@ -145,8 +146,9 @@ $ make release ARGS="minor --dry-run"  # локально, без отправк
 
 ## Требования
 
-- bun ≥ 1.4 (установка и скрипты)
-- Node ≥ 22 (тесты, `node --test`)
+- bun ≥ 1.4 (установка зависимостей и сборка)
+- Node ≥ 26 (тесты: `node --test` исполняет `.ts` напрямую; на 22 падает
+  с «Cannot find module …/test»)
 - Rust ≥ 1.77 и системные dev-пакеты — только для десктопа
 - Android SDK 36, JDK 21 — только для мобильных
 
