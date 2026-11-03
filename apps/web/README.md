@@ -20,7 +20,8 @@ src/
 │   ├── storage.ts         учётные записи и черновики в localStorage
 │   ├── format.ts          время, JID, инициалы
 │   ├── components/        Avatar, LoginScreen, ContactList, ChatView,
-│   │                      SettingsSheet, EmptyState
+│   │                      SettingsSheet, EmptyState, AddContactDialog,
+│   │                      SubscriptionRequests
 │   └── state/
 │       ├── chat.svelte.ts сессия: реактивная проекция событий XMPP
 │       └── context.ts     типизированный контекст вместо синглтона
@@ -38,6 +39,17 @@ src/
 
 Контекст (`setSession`/`getSession`) вместо импорта синглтона: сессия
 пересоздаётся вместе с корневым layout, а не живёт вечно в модуле.
+
+## Добавление контакта
+
+Кнопка «+» в шапке списка открывает `AddContactDialog`: JID, необязательное
+имя, проверка на собственный адрес и на дубликат. После отправки ядро делает
+`roster set` и `presence type="subscribe"`, диалог закрывается, чат с новым
+контактом открывается сразу.
+
+Входящие заявки складываются в `SubscriptionRequests` над списком — по одной
+строке на JID с «Принять» и «Отклонить». Автоприёма нет: пока человек не
+ответил, его присутствие никому не отдаётся.
 
 ## Команды юнита
 

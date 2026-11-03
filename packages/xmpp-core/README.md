@@ -30,9 +30,28 @@ await client.connect({ jid: 'user@example.org', password: '…' });
 await client.sendMessage('friend@example.org', 'привет');
 ```
 
+## Контакты
+
+```ts
+await client.addContact('friend@example.org', 'Друг');   // roster set + subscribe
+await client.answerSubscription('friend@example.org', 'subscribed');
+await client.removeContact('friend@example.org');        // roster remove + отзыв подписок
+```
+
+`addContact` отправляет два пакета, а не один: `iq set` в `jabber:iq:roster`
+создаёт запись на сервере, `presence type="subscribe"` просит подписку. Без
+второго контакт навсегда останется с серым статусом.
+
+Входящая подписка **не принимается автоматически**. Приходит событие
+`subscriptionRequest`, решение принимает человек через `answerSubscription`
+(RFC 6121 §3.1.3). Раньше клиент отвечал `subscribed` сам — любой, кто узнал
+JID, начинал видеть присутствие владельца учётки.
+
 ## Поддержка XEP
 
+- RFC 6121 §2.3 — добавление и удаление контактов в ростере;
 - RFC 6121 §2.5 — roster push: изменения списка приходят сами;
+- RFC 6121 §3.1 — подписки на присутствие: запрос, разрешение, отзыв;
 - XEP-0085 — индикатор набора;
 - XEP-0184 — подтверждения доставки;
 - XEP-0203 — время сообщения из `<delay>`;

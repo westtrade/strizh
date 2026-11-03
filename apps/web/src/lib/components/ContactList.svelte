@@ -2,14 +2,16 @@
 	import { bareJid } from '@strizh/xmpp-core';
 	import type { Contact } from '@strizh/xmpp-core';
 	import Avatar from './Avatar.svelte';
+	import SubscriptionRequests from './SubscriptionRequests.svelte';
 	import { formatDayLabel, formatTime, splitJid } from '#lib/format.ts';
 	import { getSession } from '#lib/state/context.ts';
 
 	interface Props {
 		onopenSettings: () => void;
+		onaddContact: () => void;
 	}
 
-	let { onopenSettings }: Props = $props();
+	let { onopenSettings, onaddContact }: Props = $props();
 	let session = getSession();
 
 	let self = $derived(session.self ?? '');
@@ -71,6 +73,11 @@
 			<strong>{selfParts.local || 'нет сессии'}</strong>
 			<span class="mono">{session.online ? 'в сети' : 'выключен'}</span>
 		</div>
+		<button class="icon" type="button" aria-label="Добавить контакт" onclick={onaddContact}>
+			<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7">
+				<path d="M10 4v12M4 10h12" stroke-linecap="round" />
+			</svg>
+		</button>
 		<button class="icon" type="button" aria-label="Настройки" onclick={onopenSettings}>
 			<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5">
 				<circle cx="10" cy="10" r="2.6" />
@@ -78,6 +85,8 @@
 			</svg>
 		</button>
 	</header>
+
+	<SubscriptionRequests />
 
 	<div class="list-head">
 		<span class="mono">контакты</span>
@@ -126,7 +135,9 @@
 		{:else}
 			<li class="empty">
 				<p>Список пуст.</p>
-				<p class="mono">ростер придёт с сервера после входа</p>
+				<button type="button" class="empty-add" onclick={onaddContact}>
+					Добавить первый контакт
+				</button>
 			</li>
 		{/each}
 	</ul>
@@ -276,6 +287,21 @@
 		color: var(--text-faint);
 		font-size: 13px;
 		display: grid;
-		gap: 4px;
+		gap: 8px;
+		justify-items: start;
+	}
+
+	.empty-add {
+		padding: 6px 10px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius);
+		color: var(--text-dim);
+		font-size: 12px;
+		min-height: 30px;
+	}
+
+	.empty-add:hover {
+		border-color: var(--amber-dim);
+		color: var(--amber);
 	}
 </style>

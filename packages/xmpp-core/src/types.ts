@@ -41,6 +41,18 @@ export interface ChatMessage {
 
 export type ChatState = 'active' | 'composing' | 'paused' | 'inactive' | 'gone';
 
+/** Запрос подписки на присутствие: `<presence type="subscribe">`. */
+export interface SubscriptionRequest {
+	jid: string;
+	/** Имя из ростера, если контакт уже добавлен, иначе локальная часть JID. */
+	name: string;
+	/** Есть ли уже двусторонняя подписка (повторный запрос от друга). */
+	alreadySubscribed: boolean;
+}
+
+/** Ответ на запрос подписки. `unsubscribed` — отказ. */
+export type SubscriptionAnswer = 'subscribed' | 'unsubscribed';
+
 /** События клиента: единственный канал наружу, без Svelte-зависимостей. */
 export interface ClientEvents {
 	status: { status: ConnectionStatus; reason?: string };
@@ -48,6 +60,10 @@ export interface ClientEvents {
 	presence: { jid: string; presence: Presence; status: string };
 	roster: Contact[];
 	chatState: { jid: string; state: ChatState };
+	/** Входящий запрос подписки: решение принимает человек, не клиент. */
+	subscriptionRequest: SubscriptionRequest;
+	/** Собеседник отменил подписку на нас (`presence type="unsubscribed"`). */
+	subscriptionRevoked: { jid: string };
 	error: Error;
 }
 

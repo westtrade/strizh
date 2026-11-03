@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AddContactDialog from '#lib/components/AddContactDialog.svelte';
 	import ChatView from '#lib/components/ChatView.svelte';
 	import ContactList from '#lib/components/ContactList.svelte';
 	import EmptyState from '#lib/components/EmptyState.svelte';
@@ -7,6 +8,7 @@
 
 	let session = getSession();
 	let settingsOpen = $state(false);
+	let addContactOpen = $state(false);
 
 	async function logout(): Promise<void> {
 		settingsOpen = false;
@@ -16,7 +18,10 @@
 </script>
 
 <div class="messenger" class:thread-open={session.activePeer !== null}>
-	<ContactList onopenSettings={() => (settingsOpen = true)} />
+	<ContactList
+		onopenSettings={() => (settingsOpen = true)}
+		onaddContact={() => (addContactOpen = true)}
+	/>
 
 	<main class="main">
 		{#if session.activePeer}
@@ -36,6 +41,10 @@
 
 {#if settingsOpen}
 	<SettingsSheet onclose={() => (settingsOpen = false)} onlogout={logout} />
+{/if}
+
+{#if addContactOpen}
+	<AddContactDialog onclose={() => (addContactOpen = false)} />
 {/if}
 
 <style>

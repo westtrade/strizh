@@ -6,7 +6,15 @@
  * здесь только реактивная проекция его событий.
  */
 import { XmppClient, bareJid } from '@strizh/xmpp-core';
-import type { Account, ChatMessage, ChatState, ConnectionStatus, Contact, Presence } from '@strizh/xmpp-core';
+import type {
+	Account,
+	ChatMessage,
+	ChatState,
+	ConnectionStatus,
+	Contact,
+	Presence,
+	SubscriptionRequest
+} from '@strizh/xmpp-core';
 
 import { defaultResource, detectPlatform, type Platform } from '../platform.ts';
 import { loadDrafts, saveDraft } from '../storage.ts';
@@ -33,6 +41,10 @@ export class ChatSession {
 	presence = $state<Presence>('online');
 	/** Черновик «личного» статуса, которым делимся с контактами. */
 	statusText = $state('');
+	/** Входящие заявки на подписку: решение принимает человек, не клиент. */
+	requests = $state<SubscriptionRequest[]>([]);
+	/** Ошибка действия с ростором (добавление, ответ на заявку). */
+	rosterError = $state<string | null>(null);
 
 	readonly #client = new XmppClient();
 	#disposers: Array<() => void> = [];
@@ -73,6 +85,14 @@ export class ChatSession {
 			this.#client.on('presence', ({ jid, presence, status }) => this.#applyPresence(jid, presence, status)),
 			this.#client.on('message', (message) => this.#applyMessage(message)),
 			this.#client.on('chatState', ({ jid, state }) => this.#applyChatState(jid, state)),
+			this.#client.on('subscriptionRequest', (request) => this.#applySubscriptionRequest(request)),
+			this.#client.on('subscriptionRevoked', ({ jid }) => {
+				const known = this.contacts.find((c) => c.jid === jid);
+				if (known) {
+					known.presence = 'offline';
+					known.status = '';
+				}
+			}),
 			this.#client.on('error', (error) => {
 				this.error = error.message;
 			})
@@ -114,6 +134,8 @@ export class ChatSession {
 		this.activePeer = null;
 		this.unread = {};
 		this.composing = {};
+		this.requests = [];
+		this.rosterError = null;
 	}
 
 	async send(text: string): Promise<void> {
@@ -177,6 +199,49 @@ export class ChatSession {
 
 	setDraft(peer: string, text: string): void {
 		this.#setDraft(peer, text);
+	}
+
+	async addContact(jid: string, name = ''): Promise<boolean> {
+		this.rosterError = null;
+		try {
+			await this.#client.addContact(jid, name);
+			this.contacts = this.#client.contacts;
+			return true;
+		} catch (error) {
+			this.rosterError = error instanceof Error ? error.message : String(error);
+			return false;
+		}
+	}
+
+	async removeContact(jid: string): Promise<void> {
+		this.rosterError = null;
+		try {
+			await this.#client.removeContact(jid);
+			this.contacts = this.#client.contacts;
+			if (this.activePeer === jid) this.activePeer = null;
+		} catch (error) {
+			this.rosterError = error instanceof Error ? error.message : String(error);
+		}
+	}
+
+	async answerRequest(jid: string, accept: boolean): Promise<void> {
+		this.rosterError = null;
+		try {
+			await this.#client.answerSubscription(jid, accept ? 'subscribed' : 'unsubscribed');
+			this.requests = this.requests.filter((request) => request.jid !== jid);
+			this.contacts = this.#client.contacts;
+		} catch (error) {
+			this.rosterError = error instanceof Error ? error.message : String(error);
+		}
+	}
+
+	dismissRequest(jid: string): void {
+		this.requests = this.requests.filter((request) => request.jid !== jid);
+	}
+
+	#applySubscriptionRequest(request: SubscriptionRequest): void {
+		// Один и тот же JID может попросить подписку повторно — не плодим строки.
+		this.requests = [...this.requests.filter((r) => r.jid !== request.jid), request];
 	}
 
 	#setDraft(peer: string, text: string): void {

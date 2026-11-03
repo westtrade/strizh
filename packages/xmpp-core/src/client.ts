@@ -387,6 +387,83 @@ export class XmppClient {
 		await connection.send(xml('presence', {}, ...children));
 	}
 
+	/**
+	 * Добавляет контакт в ростер и запрашивает подписку (RFC 6121 §2.3, §3.1.2).
+	 *
+	 * Два пакета, а не один: `iq set` создаёт запись на сервере, а без
+	 * `presence type="subscribe"` собеседник не увидит запрос и его присутствие
+	 * останется недоступным.
+	 */
+	async addContact(jidValue: string, name = ''): Promise<Contact> {
+		const connection = this.#connection;
+		if (!connection) throw new Error('нет соединения с XMPP-сервером');
+		const peer = bareJid(jidValue);
+		if (this.#self && peer === bareJid(this.#self)) {
+			throw new Error('нельзя добавить в контакты самого себя');
+		}
+
+		const item = xml('item', { jid: peer, ...(name.trim() ? { name: name.trim() } : {}) });
+		await connection.iqCaller.request(xml('iq', { type: 'set' }, xml('query', { xmlns: 'jabber:iq:roster' }, item)));
+		await connection.send(xml('presence', { to: peer, type: 'subscribe' }));
+
+		// Roster push может прийти раньше ответа: если запись уже есть, не дублируем.
+		const existing = this.#contacts.get(peer);
+		const contact: Contact = existing ?? {
+			jid: peer,
+			name: name.trim() || peer.split('@')[0] || peer,
+			presence: 'offline',
+			status: '',
+			subscription: 'none'
+		};
+		this.#contacts.set(peer, contact);
+		this.#emit('roster', this.contacts);
+		return contact;
+	}
+
+	/** Удаляет контакт из ростера и отзывает обе подписки. */
+	async removeContact(jidValue: string): Promise<void> {
+		const connection = this.#connection;
+		if (!connection) throw new Error('нет соединения с XMPP-сервером');
+		const peer = bareJid(jidValue);
+		const item = xml('item', { jid: peer, subscription: 'remove' });
+		await connection.iqCaller.request(xml('iq', { type: 'set' }, xml('query', { xmlns: 'jabber:iq:roster' }, item)));
+		await connection.send(xml('presence', { to: peer, type: 'unsubscribe' }));
+		await connection.send(xml('presence', { to: peer, type: 'unsubscribed' }));
+		this.#contacts.delete(peer);
+		this.#emit('roster', this.contacts);
+	}
+
+	/** Ответ на запрос подписки и на отзыв подписки. */
+	async answerSubscription(jidValue: string, answer: 'subscribed' | 'unsubscribed'): Promise<void> {
+		const connection = this.#connection;
+		if (!connection) throw new Error('нет соединения с XMPP-сервером');
+		const peer = bareJid(jidValue);
+		await connection.send(xml('presence', { to: peer, type: answer }));
+
+		const known = this.#contacts.get(peer);
+		if (known && answer === 'subscribed') {
+			// Мы разрешили видеть нас; чтобы видеть собеседника, нужна встречная подписка.
+			if (known.subscription === 'from') known.subscription = 'both';
+			else if (known.subscription === 'none') known.subscription = 'from';
+			this.#emit('roster', this.contacts);
+			await connection.send(xml('presence', { to: peer, type: 'subscribe' }));
+		}
+		if (known && answer === 'unsubscribed') {
+			if (known.subscription === 'both') known.subscription = 'to';
+			else if (known.subscription === 'from') known.subscription = 'none';
+			known.presence = 'offline';
+			known.status = '';
+			this.#emit('roster', this.contacts);
+		}
+	}
+
+	/** Запрос подписки на уже добавленный контакт (повторная отправка заявки). */
+	async requestSubscription(jidValue: string): Promise<void> {
+		const connection = this.#connection;
+		if (!connection) throw new Error('нет соединения с XMPP-сервером');
+		await connection.send(xml('presence', { to: bareJid(jidValue), type: 'subscribe' }));
+	}
+
 	async #afterOnline(): Promise<void> {
 		await this.setPresence('online');
 		await this.#requestRoster();
@@ -542,12 +619,24 @@ export class XmppClient {
 		const type = stanza.attrs.type;
 		const contactJid = bareJid(from);
 
-		// Подписки на присутствие: принимаем всё, что сервер присылает явно.
+		// RFC 6121 §3.1.3: запрос подписки решает человек, а не клиент.
+		// Раньше здесь стоял автоматический `subscribed`, и любой, кто узнал JID,
+		// начинал видеть присутствие без согласия владельца учётки.
 		if (type === 'subscribe') {
-			void this.#connection?.send(xml('presence', { to: contactJid, type: 'subscribed' }));
+			const known = this.#contacts.get(contactJid);
+			this.#emit('subscriptionRequest', {
+				jid: contactJid,
+				name: known?.name ?? contactJid.split('@')[0] ?? contactJid,
+				alreadySubscribed: known?.subscription === 'both' || known?.subscription === 'to'
+			});
 			return;
 		}
-		if (type === 'unsubscribe' || type === 'unsubscribed' || type === 'probe') return;
+		// Собеседник больше не хочет видеть нас в своём списке.
+		if (type === 'unsubscribed') {
+			this.#emit('subscriptionRevoked', { jid: contactJid });
+			return;
+		}
+		if (type === 'unsubscribe' || type === 'probe') return;
 
 		const presence: Presence =
 			type === 'unavailable'

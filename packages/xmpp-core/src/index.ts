@@ -21,5 +21,7 @@ export type {
 	ClientListener,
 	ConnectionStatus,
 	Contact,
-	Presence
+	Presence,
+	SubscriptionAnswer,
+	SubscriptionRequest
 } from './types.ts';

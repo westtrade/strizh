@@ -31,7 +31,7 @@ interface Session {
 
 type Send = (text: string) => void;
 
-const ROSTER: Record<string, Array<{ jid: string; name?: string; subscription: string }>> = {
+const DEFAULT_ROSTER: Record<string, Array<{ jid: string; name?: string; subscription: string }>> = {
 	'anna@localhost': [
 		{ jid: 'boris@localhost', name: 'Борис', subscription: 'both' },
 		{ jid: 'vera@localhost', name: 'Вера', subscription: 'both' }
@@ -74,6 +74,9 @@ export interface MockServer {
 export async function startMockServer(port = 0): Promise<MockServer> {
 	const connections = new Map<RawConnection, unknown>();
 	const routed: Array<{ from: string; to: string; body: string }> = [];
+	// Копия на каждый сервер: тесты не должны видеть правки друг друга.
+	const ROSTER: Record<string, Array<{ jid: string; name?: string; subscription: string }>> =
+		structuredClone(DEFAULT_ROSTER);
 
 	function fanout(predicate: (c: RawConnection) => boolean, xmlText: string): void {
 		for (const [connection] of connections) {
@@ -92,6 +95,33 @@ export async function startMockServer(port = 0): Promise<MockServer> {
 		connection.send(
 			`<iq type="set" id="push-${Date.now()}"><query xmlns="${NS_ROSTER}">${items}</query></iq>`
 		);
+	}
+
+	type SubFlag = 'to' | 'from';
+
+	function setSubscription(owner: string, peer: string, flag: SubFlag, on: boolean): void {
+		const list = ROSTER[owner] ?? (ROSTER[owner] = []);
+		let entry = list.find((item) => item.jid === peer);
+		if (!entry) {
+			entry = { jid: peer, subscription: 'none' };
+			list.push(entry);
+		}
+		const has = (value: string) => value === flag || value === 'both';
+		if (on) {
+			if (!has(entry.subscription)) {
+				entry.subscription = entry.subscription === 'none' ? flag : 'both';
+			}
+		} else if (has(entry.subscription)) {
+			entry.subscription = entry.subscription === 'both' ? (flag === 'to' ? 'from' : 'to') : 'none';
+		}
+	}
+
+	/** Кому сервер обязан отдавать присутствие `owner` (у кого есть 'to' на него). */
+	function subscribersOf(owner: string): string[] {
+		return Object.keys(ROSTER).filter((peer) => {
+			const entry = (ROSTER[peer] ?? []).find((item) => item.jid === owner);
+			return entry?.subscription === 'to' || entry?.subscription === 'both';
+		});
 	}
 
 	function handle(connection: RawConnection, raw: string): void {
@@ -170,12 +200,79 @@ export async function startMockServer(port = 0): Promise<MockServer> {
 			return;
 		}
 
+		if (raw.startsWith('<iq') && raw.includes(NS_ROSTER) && raw.includes('type="set"')) {
+			const owner = bareJid(session.user);
+			const itemJid = /<item[^>]*jid="([^"]*)"/u.exec(raw)?.[1] ?? '';
+			const itemName = /<item[^>]*name="([^"]*)"/u.exec(raw)?.[1] ?? '';
+			const remove = /<item[^>]*subscription="remove"/u.test(raw);
+			const list = ROSTER[owner] ?? (ROSTER[owner] = []);
+
+			if (remove) {
+				ROSTER[owner] = list.filter((item) => item.jid !== itemJid);
+			} else if (itemJid) {
+				const existing = list.find((item) => item.jid === itemJid);
+				if (existing) {
+					if (itemName) existing.name = itemName;
+				} else {
+					list.push({ jid: itemJid, name: itemName || undefined, subscription: 'none' });
+				}
+			}
+			connection.send(`<iq type="result" id="${attr(raw, 'id') ?? 'set'}"/>`);
+			// RFC 6121 §2.1.6: сервер сам рассылает обновление ростера.
+			rosterPush(connection, owner);
+			return;
+		}
+
 		if (raw.startsWith('<presence')) {
 			const type = attr(raw, 'type');
 			const self = bareJid(session.user);
-			// Взаимные подписки: контакты из ростера видят друг друга.
-			const peers = (ROSTER[self] ?? []).map((item) => item.jid);
-			for (const peer of peers) {
+			const to = attr(raw, 'to') ?? '';
+
+			// Подписки адресованы конкретному JID. Направление важнее факта:
+			// 'to' — я вижу собеседника, 'from' — собеседник видит меня.
+			if (type && /^(subscribe|subscribed|unsubscribe|unsubscribed)$/u.test(type) && to) {
+				const peer = bareJid(to);
+				const target = [...connections.keys()].find(
+					(c) => c.session.authenticated && bareJid(c.session.user) === peer
+				);
+				if (target) {
+					target.send(
+						`<presence from="${escapeXml(bareJid(session.user))}" to="${escapeXml(peer)}" type="${type}"/>`
+					);
+				}
+				if (type === 'subscribe') {
+					// Я прошу подписку на собеседника: мне 'to', ему 'from'.
+					setSubscription(self, peer, 'to', true);
+					setSubscription(peer, self, 'from', true);
+				} else if (type === 'subscribed') {
+					// Я разрешаю смотреть на себя: собеседнику 'to', мне 'from'.
+					setSubscription(peer, self, 'to', true);
+					setSubscription(self, peer, 'from', true);
+					// Разрешение открывает моё присутствие адресату сразу.
+					if (target) {
+						target.send(
+							`<presence from="${escapeXml(session.jid)}" to="${escapeXml(peer)}"><show>chat</show></presence>`
+						);
+					}
+				} else if (type === 'unsubscribe') {
+					// Я больше не хочу видеть собеседника.
+					setSubscription(self, peer, 'to', false);
+					setSubscription(peer, self, 'from', false);
+				} else {
+					// Я запрещаю смотреть на себя: присутствие больше не рассылается.
+					setSubscription(peer, self, 'to', false);
+					setSubscription(self, peer, 'from', false);
+					if (target) {
+						target.send(
+							`<presence from="${escapeXml(session.jid)}" to="${escapeXml(peer)}" type="unavailable"/>`
+						);
+					}
+				}
+				return;
+			}
+			// Присутствие уходит только подписчикам: у кого в ростере 'to' на нас.
+			const audience = new Set(subscribersOf(self));
+			for (const peer of audience) {
 				fanout(
 					(c) => c !== connection && c.session.authenticated && bareJid(c.session.user) === peer,
 					type === 'unavailable'
@@ -183,8 +280,13 @@ export async function startMockServer(port = 0): Promise<MockServer> {
 						: `<presence from="${escapeXml(session.jid)}"><show>chat</show></presence>`
 				);
 			}
+			// В ответ на своё присутствие клиент получает присутствие тех, на кого
+			// подписан он сам — и только тех.
 			if (type !== 'unavailable' && connection.rosterRequested) {
-				for (const peer of peers) {
+				const visible = (ROSTER[self] ?? [])
+					.filter((item) => item.subscription === 'to' || item.subscription === 'both')
+					.map((item) => item.jid);
+				for (const peer of visible) {
 					const peerConnection = [...connections.keys()].find(
 						(c) => c.session.authenticated && bareJid(c.session.user) === peer
 					);
